@@ -2,6 +2,22 @@
 
 nextflow.enable.dsl = 2
 
+process MERGE {
+  publishDir "${params.outdir}/merge", pattern: '*.fastq.gz', mode: 'link'
+  tag "${sampleid}"
+  label 'process_low'
+
+  input:
+    tuple val(sampleid), path(lanes), path(reference)
+  output:
+    tuple val(sampleid), path("${sampleid}.fastq.gz"), path(reference), emit: merged
+  script:
+  """
+  cat ${lanes} > ${sampleid}.fastq.gz
+  """
+
+}
+
 process FLYE {
   publishDir "${params.outdir}/flye", mode: 'link'
   tag "${sampleid}"
@@ -97,17 +113,25 @@ process NANOQ {
 }
 
 workflow {
-if (params.samplesheet) {
+// if (params.samplesheet) {
+//     Channel
+//       .fromPath(params.samplesheet, checkIfExists: true)
+//       .splitCsv(header:true)
+//       .map{ row-> tuple(row.sampleid), file("row.sample_folder"), file(row.reference) }
+//       .set{ ch_sample }
+//   } else { exit 1, "Input samplesheet file not specified!" }
+  if (params.samplesheet) {
     Channel
       .fromPath(params.samplesheet, checkIfExists: true)
       .splitCsv(header:true)
-      .map{ row-> tuple(row.sampleid), file(row.sample), file(row.reference) }
+      .map{ row-> tuple(row.sampleid), file(row.sample_files), file(row.reference) }
       .set{ ch_sample }
   } else { exit 1, "Input samplesheet file not specified!" }
 
-  FLYE ( ch_sample )
+  MERGE ( ch_sample )
+  FLYE ( MERGE.out.merged )
   BLASTN ( FLYE.out.assembly )
-  MINIMAP2 ( ch_sample )
+  MINIMAP2 ( MERGE.out.merged )
   SAMTOOLS ( MINIMAP2.out.aligned_sample )
   NANOQ ( SAMTOOLS.out.sorted_sample )
 }
