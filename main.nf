@@ -5,7 +5,7 @@ nextflow.enable.dsl = 2
 process MERGE {
   publishDir "${params.outdir}/merge", pattern: '*.fastq.gz', mode: 'link'
   tag "${sampleid}"
-  label 'process_low'
+  label 'process_very_low'
 
   input:
     tuple val(sampleid), path(lanes), path(reference)
@@ -68,11 +68,29 @@ process MINIMAP2 {
   input:
     tuple val(sampleid), path(sample),path(reference)
   output:
-    tuple val(sampleid), file("${sampleid}_aln.sam"), emit: aligned_sample
+    tuple val(sampleid), file("${sampleid}_aln.sam"), path(reference), emit: aligned_sample
   script:
   """
   minimap2 -a --MD ${reference} ${sample} > ${sampleid}_aln.sam
   """
+}
+
+process INFOSEQ {
+  publishDir "${params.outdir}/infoseq", mode: 'link'
+  tag "${sampleid}"
+  label 'process_low'
+
+  container "quay.io/biocontainers/emboss:6.6.0--h1b6f16a_5"
+
+  input:
+    tuple val(sampleid), path(sample), path(reference)
+  output:
+    tuple val(sampleid), path(sample), path("${reference}_list.txt"), emit: infoseq_ref
+  script:
+  """
+  infoseq ${reference} -only -name -length | sed 1d > ${reference}_list.txt
+  """
+
 }
 
 process SAMTOOLS {
@@ -83,12 +101,12 @@ process SAMTOOLS {
   container 'quay.io/biocontainers/samtools:1.16.1--h6899075_1'
 
   input:
-    tuple val(sampleid), path(sample)
+    tuple val(sampleid), path(sample), path(reference_list)
   output:
     tuple val(sampleid), path("${sampleid}_aln.sorted.bam"), path("${sampleid}_aln.sorted.bam.bai"), emit: sorted_sample
   script:
   """
-  samtools view -bt ref_list.txt -o ${sampleid}_aln.bam ${sample}
+  samtools view -bt ${reference_list} -o ${sampleid}_aln.bam ${sample}
   samtools sort -T /tmp/aln.sorted -o ${sampleid}_aln.sorted.bam ${sampleid}_aln.bam
   samtools index ${sampleid}_aln.sorted.bam
   """
@@ -132,6 +150,8 @@ workflow {
   FLYE ( MERGE.out.merged )
   BLASTN ( FLYE.out.assembly )
   MINIMAP2 ( MERGE.out.merged )
-  SAMTOOLS ( MINIMAP2.out.aligned_sample )
+  INFOSEQ ( MINIMAP2.out.aligned_sample )
+  SAMTOOLS ( INFOSEQ.out.infoseq_ref )
   NANOQ ( SAMTOOLS.out.sorted_sample )
 }
+
