@@ -1,3 +1,0 @@
-sampleid,sample_files,reference
-ET300,/mnt/work/phylo/OxfordNanopore/ET300_barcode95/F*.fastq.gz,/mnt/work/phylo/OxfordNanopore/ET300_MT921572_reference_sequence.fasta
-NC483,/mnt/work/phylo/OxfordNanopore/NC483_barcode96/F*.fastq.gz,/mnt/work/phylo/OxfordNanopore/NC483_NC001477_reference_sequence.fasta
