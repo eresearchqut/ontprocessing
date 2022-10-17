@@ -2,10 +2,64 @@
 
 nextflow.enable.dsl = 2
 
+def helpMessage () {
+    log.info """
+    ONTProcessing workflow
+    Roberto Barrero, 17/10/2022
+    Craig Windell, 17/10/2022
+
+    Usage:
+    Run the command
+    nextflow run eresearchqut/ontprocessing {optional arguments}...
+
+    Optional arguments:
+      -resume                           Resume a failed run
+      --outdir                          Path to save the output file
+                                        'results'
+      --samplesheet '[path/to/file]'    Path to the csv file that contains the list of
+                                        samples to be analysed by this pipeline.
+                              Default:  'index.csv'
+      Contents of samplesheet csv:
+        sampleid,sample_files,reference
+        SAMPLE01,/user/folder/*.fastq.gz,/path/to/reference.fasta
+
+        sample_files can refer to a folder with a number of
+        files that will be merged in the pipeline
+
+        --flye_read_error               adjust parameters for given read error rate (as fraction e.g. 0.03)
+                              Default:  0.03
+
+        --flye_ont_mode                 Select from nano-raw, nano-corr, nano-hq
+                              Default:  'nano-hq'
+
+        --nanoq_code_start              Start codon position in the reference sequence
+                              Default:  1
+
+        --nanoq_read_length             Length cut off for read size
+                              Default:  9000
+
+        --nanoq_num_ref                 Number of references used in the alignment
+                              Default:  1
+
+        --nanoq_qual_threshhold         Base quality score cut off
+                              Default:  5
+
+        --nanoq_jump                    Increase this to make larger read intervals
+                              Default:  10
+
+    """.stripIndent()
+}
+// Show help message
+if (params.help) {
+    helpMessage()
+    exit 0
+}
+
+
 process MERGE {
   publishDir "${params.outdir}/merge", pattern: '*.fastq.gz', mode: 'link'
   tag "${sampleid}"
-  label 'process_very_low'
+  label 'small'
 
   input:
     tuple val(sampleid), path(lanes), path(reference)
@@ -21,7 +75,7 @@ process MERGE {
 process FLYE {
   publishDir "${params.outdir}/flye", mode: 'link'
   tag "${sampleid}"
-  label 'process_medium'
+  label 'large'
 
   container "quay.io/biocontainers/flye:2.9.1--py310h590eda1_0"
 
@@ -31,15 +85,15 @@ process FLYE {
     path 'outdir/*'
     tuple val(sampleid), path('outdir/assembly.fasta'), path(reference), emit: assembly
   script:
-  """
-  flye  --out-dir outdir --threads ${task.cpus} --read-error 0.03 --nano-hq ${sample}
+    """
+  flye  --out-dir outdir --threads ${task.cpus} --read-error ${params.flye_read_error} --${params.flye_ont_mode} ${sample}
   """
 }
 
 process BLASTN {
   publishDir "${params.outdir}/blastn", mode: 'link'
   tag "${sampleid}"
-  label 'process_low'
+  label 'small'
 
   container 'quay.io/biocontainers/blast:2.13.0--hf3cf87c_0'
 
@@ -61,7 +115,7 @@ process BLASTN {
 process MINIMAP2 {
   publishDir "${params.outdir}/minimap2", mode: 'link'
   tag "${sampleid}"
-  label 'process_low'
+  label 'medium'
 
   container 'quay.io/biocontainers/minimap2:2.24--h7132678_1'
 
@@ -78,7 +132,7 @@ process MINIMAP2 {
 process INFOSEQ {
   publishDir "${params.outdir}/infoseq", mode: 'link'
   tag "${sampleid}"
-  label 'process_low'
+  label 'small'
 
   container "quay.io/biocontainers/emboss:6.6.0--h1b6f16a_5"
 
@@ -96,7 +150,7 @@ process INFOSEQ {
 process SAMTOOLS {
   publishDir "${params.outdir}/samtools", mode: 'link'
   tag "${sampleid}"
-  label 'process_low'
+  label 'small'
 
   container 'quay.io/biocontainers/samtools:1.16.1--h6899075_1'
 
@@ -115,8 +169,8 @@ process SAMTOOLS {
 process NANOQ {
   publishDir "${params.outdir}/nano-q", mode: 'link'
   tag "${sampleid}"
-  label 'process_medium'
-  
+  label 'medium'
+
   container 'ghcr.io/eresearchqut/nano-q:1.0.0'
 
   input:
@@ -126,18 +180,11 @@ process NANOQ {
 
   script:
   """
-  nano-q.py -b ${sorted_sample} -c 1 -l 9000 -nr 1 -q 5 -j 10
+  nano-q.py -b ${sorted_sample} -c ${params.nanoq_code_start} -l ${params.nanoq_read_length} -nr ${params.nanoq_num_ref} -q ${params.nanoq_qual_threshhold} -j ${params.nanoq_jump}
   """
 }
 
 workflow {
-// if (params.samplesheet) {
-//     Channel
-//       .fromPath(params.samplesheet, checkIfExists: true)
-//       .splitCsv(header:true)
-//       .map{ row-> tuple(row.sampleid), file("row.sample_folder"), file(row.reference) }
-//       .set{ ch_sample }
-//   } else { exit 1, "Input samplesheet file not specified!" }
   if (params.samplesheet) {
     Channel
       .fromPath(params.samplesheet, checkIfExists: true)
