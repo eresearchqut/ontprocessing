@@ -189,7 +189,7 @@ workflow {
     Channel
       .fromPath(params.samplesheet, checkIfExists: true)
       .splitCsv(header:true)
-      .map{ row-> tuple(row.sampleid), file(row.sample_files), file(row.reference) }
+      .map{ row-> tuple((row.sampleid), file(row.sample_files), file(row.reference)) }
       .set{ ch_sample }
   } else { exit 1, "Input samplesheet file not specified!" }
 
